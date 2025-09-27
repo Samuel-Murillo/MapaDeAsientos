@@ -274,6 +274,27 @@ const mainInput = document.getElementById('seatInput');
 const mainButton = document.getElementById('searchButton');
 const mainInfo = document.getElementById('seatInfo');
 
+// Conectar formulario de búsqueda por nombre (inputs recién agregados en index.html)
+const firstNameInput = document.getElementById('firstNameInput');
+const lastNameInput = document.getElementById('lastNameInput');
+const searchByNameButton = document.getElementById('searchByNameButton');
+
+if (searchByNameButton && (firstNameInput || lastNameInput)) {
+  searchByNameButton.addEventListener('click', () => {
+    const n = (firstNameInput && firstNameInput.value) ? firstNameInput.value.trim() : '';
+    const a = (lastNameInput && lastNameInput.value) ? lastNameInput.value.trim() : '';
+    const query = (n && a) ? `${n} ${a}` : (n || a);
+    if (!query) {
+      if (mainInfo) mainInfo.textContent = '⚠️ Ingresa nombre o apellido para buscar.';
+      return;
+    }
+    // Colocar el texto en el input principal para reusar la lógica del botón principal
+    if (mainInput) mainInput.value = query;
+    // Simular click del botón principal
+    if (mainButton) mainButton.click();
+  });
+}
+
 if (mainButton && mainInput) {
   // Adjuntar manejador adicional que decide si buscar por número o por nombre
   mainButton.addEventListener('click', async (ev) => {
