@@ -288,82 +288,84 @@ if (searchByNameButton && (firstNameInput || lastNameInput)) {
       if (mainInfo) mainInfo.textContent = '⚠️ Ingresa nombre o apellido para buscar.';
       return;
     }
-    // Colocar el texto en el input principal para reusar la lógica del botón principal
-    if (mainInput) mainInput.value = query;
-    // Simular click del botón principal
-    if (mainButton) mainButton.click();
+    // Llamar directamente a la función de búsqueda con la consulta compuesta
+    if (typeof handleSearchValue === 'function') {
+      handleSearchValue(query);
+    } else {
+      // Fallback: si no existe, intentar simular click colocando el texto (esto puede fallar si el texto no es numérico)
+      if (mainButton) mainButton.click();
+    }
   });
 }
 
-if (mainButton && mainInput) {
-  // Adjuntar manejador adicional que decide si buscar por número o por nombre
-  mainButton.addEventListener('click', async (ev) => {
-    const val = mainInput.value.trim();
-    if (!val) {
-      mainInfo.textContent = '⚠️ Ingresa un número o un nombre para buscar';
-      return;
-    }
+// Función reutilizable que maneja la búsqueda a partir de un valor (número o texto)
+async function handleSearchValue(val) {
+  const raw = (val || '').toString().trim();
+  if (!raw) {
+    if (mainInfo) mainInfo.textContent = '⚠️ Ingresa un número o un nombre para buscar';
+    return;
+  }
 
-    // Priorizar búsqueda numérica si la entrada es un entero
-    const maybeNum = parseInt(val);
-    if (!isNaN(maybeNum) && String(maybeNum) === val) {
-      // Llamar al click original ya definido dentro del load del SVG — simulamos click: buscar el rect con data-seat
-      // Si el SVG ya está cargado, marcar asiento. Si no, mostrar mensaje.
-      const svgObj = document.getElementById('svgMapa');
-      if (svgObj && svgObj.contentDocument) {
-        const seatRect = svgObj.contentDocument.querySelector(`rect[data-seat='${maybeNum}']`);
-        if (seatRect) {
-          // Reutilizar la función marcarAsiento si está en scope — está dentro del load handler, por lo que puede no ser accesible aquí.
-          // Intentaremos dispatch de un evento personalizado para que el handler dentro de load lo procese.
-          const ev = new CustomEvent('marcar-asiento-externo', { detail: { numero: maybeNum } });
-          svgObj.dispatchEvent(ev);
-          return;
-        } else {
-          mainInfo.textContent = `❌ Asiento num ${maybeNum} no encontrado en el mapa.`;
-          return;
-        }
+  // Priorizar búsqueda numérica si la entrada es un entero
+  const maybeNum = parseInt(raw);
+  if (!isNaN(maybeNum) && String(maybeNum) === raw) {
+    const svgObj = document.getElementById('svgMapa');
+    if (svgObj && svgObj.contentDocument) {
+      const seatRect = svgObj.contentDocument.querySelector(`rect[data-seat='${maybeNum}']`);
+      if (seatRect) {
+        svgObj.dispatchEvent(new CustomEvent('marcar-asiento-externo', { detail: { numero: maybeNum } }));
+        return;
       } else {
-        mainInfo.textContent = '⚠️ El mapa SVG no está listo aún.';
+        if (mainInfo) mainInfo.textContent = `❌ Asiento num ${maybeNum} no encontrado en el mapa.`;
         return;
       }
-    }
-
-    // Si no es número, búsqueda por nombre
-    if (!csvData) {
-      mainInfo.textContent = '⚠️ Lista de nombres no cargada aún. Intenta de nuevo en un momento.';
-      return;
-    }
-
-    const matches = buscarEnCSV(csvData, val);
-    if (matches.length === 0) {
-      mainInfo.textContent = `❌ No se encontraron coincidencias para "${val}".`;
-      return;
-    }
-    // Si hay múltiples, mostrar lista resumida
-    if (matches.length > 1) {
-      const lista = matches.slice(0, 10).map(m => `${m.asiento} → ${m.nombre} ${m.apellido}`).join('\n');
-      mainInfo.textContent = `ℹ️ Se encontraron ${matches.length} coincidencias (mostrando hasta 10):\n${lista}`;
-      // Intentar priorizar coincidencia exacta (nombre y apellido completos)
-      const exact = matches.find(m => normalizeString((m.nombre + ' ' + m.apellido).trim()) === normalizeString(val));
-      if (exact) {
-        // marcar el asiento exacto
-        const svgObj = document.getElementById('svgMapa');
-        if (svgObj && svgObj.contentDocument) {
-          svgObj.dispatchEvent(new CustomEvent('marcar-asiento-externo', { detail: { numero: parseInt(exact.asiento) } }));
-        }
-      }
-      return;
-    }
-
-    // Uno único: marcarlo
-    const seatNum = parseInt(matches[0].asiento);
-    const svgObj2 = document.getElementById('svgMapa');
-    if (svgObj2 && svgObj2.contentDocument) {
-      svgObj2.dispatchEvent(new CustomEvent('marcar-asiento-externo', { detail: { numero: seatNum } }));
-      mainInfo.textContent = `✅ Encontrado: ${matches[0].asiento} → ${matches[0].nombre} ${matches[0].apellido}`;
     } else {
-      mainInfo.textContent = `⚠️ Resultado: asiento ${seatNum}. El mapa SVG no está listo aún.`;
+      if (mainInfo) mainInfo.textContent = '⚠️ El mapa SVG no está listo aún.';
+      return;
     }
+  }
+
+  // Si no es número, búsqueda por nombre
+  if (!csvData) {
+    if (mainInfo) mainInfo.textContent = '⚠️ Lista de nombres no cargada aún. Intenta de nuevo en un momento.';
+    return;
+  }
+
+  const matches = buscarEnCSV(csvData, raw);
+  if (matches.length === 0) {
+    if (mainInfo) mainInfo.textContent = `❌ No se encontraron coincidencias para "${raw}".`;
+    return;
+  }
+  // Si hay múltiples, mostrar lista resumida
+  if (matches.length > 1) {
+    const lista = matches.slice(0, 10).map(m => `${m.asiento} → ${m.nombre} ${m.apellido}`).join('\n');
+    if (mainInfo) mainInfo.textContent = `ℹ️ Se encontraron ${matches.length} coincidencias (mostrando hasta 10):\n${lista}`;
+    // Intentar priorizar coincidencia exacta (nombre y apellido completos)
+    const exact = matches.find(m => normalizeString((m.nombre + ' ' + m.apellido).trim()) === normalizeString(raw));
+    if (exact) {
+      const svgObj = document.getElementById('svgMapa');
+      if (svgObj && svgObj.contentDocument) {
+        svgObj.dispatchEvent(new CustomEvent('marcar-asiento-externo', { detail: { numero: parseInt(exact.asiento) } }));
+      }
+    }
+    return;
+  }
+
+  // Uno único: marcarlo
+  const seatNum = parseInt(matches[0].asiento);
+  const svgObj2 = document.getElementById('svgMapa');
+  if (svgObj2 && svgObj2.contentDocument) {
+    svgObj2.dispatchEvent(new CustomEvent('marcar-asiento-externo', { detail: { numero: seatNum } }));
+    if (mainInfo) mainInfo.textContent = `✅ Encontrado: ${matches[0].asiento} → ${matches[0].nombre} ${matches[0].apellido}`;
+  } else {
+    if (mainInfo) mainInfo.textContent = `⚠️ Resultado: asiento ${seatNum}. El mapa SVG no está listo aún.`;
+  }
+}
+
+// Conectar el botón principal para usar la función reutilizable
+if (mainButton && mainInput) {
+  mainButton.addEventListener('click', async () => {
+    await handleSearchValue(mainInput.value);
   });
 }
 
