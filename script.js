@@ -113,7 +113,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Debug: construir resumen de filas detectadas
-    const rowSummaries = validRows.map((r, i) => `fila${i+1}:cy=${Math.round(r.cy)} count=${r.items.length}`);
+    /*const rowSummaries = validRows.map((r, i) => `fila${i+1}:cy=${Math.round(r.cy)} count=${r.items.length}`);
     const firstAssigned = svgDoc.querySelector("rect[data-seat='1']");
     let debugMsg = `Asignados ${seatIndex} asientos. Filas detectadas: ${rowSummaries.length}. `;
     debugMsg += rowSummaries.join(' | ');
@@ -122,7 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const fy = firstAssigned.getAttribute('y');
       debugMsg += ` → Asiento1 x=${fx}, y=${fy}`;
     }
-    info.textContent = debugMsg;
+    info.textContent = debugMsg;*/
 
 
     let lastSeat = null;
