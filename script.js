@@ -131,7 +131,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Restaurar color del último asiento seleccionado
       if (lastSeat) {
-        lastSeat.setAttribute("fill", "#fff"); // color original, ajusta si es necesario
+        const orig = lastSeat.getAttribute('data-orig-fill') || lastSeat.getAttribute('fill') || '#fff';
+        lastSeat.setAttribute('fill', orig);
       }
 
       const seat = svgDoc.querySelector(`rect[data-seat='${numero}']`);
@@ -142,7 +143,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Cambiar color del asiento seleccionado
       seat.setAttribute("fill", "#ff9800"); // naranja
-      lastSeat = seat;
+  lastSeat = seat;
+  try { svgObject._lastSeat = seat; } catch (_) {}
 
       const x = parseFloat(seat.getAttribute("x"));
       const y = parseFloat(seat.getAttribute("y"));
@@ -196,3 +198,231 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Código base para comenzar las nuevas funcionalidades
+// --- Nuevas funcionalidades: búsqueda por nombre usando el CSV ---
+// Cargar y parsear el CSV de nombres (archivo local en el mismo directorio)
+async function cargarCSV(ruta) {
+  try {
+    const resp = await fetch(ruta);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const txt = await resp.text();
+    return parseCSV(txt);
+  } catch (e) {
+    console.error('Error cargando CSV:', e);
+    return null;
+  }
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const encabezado = lines[0].split(',').map(h => h.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    // Manejo simple de comillas: dividir respetando comillas no trivial pero suficiente para este CSV
+    const parts = line.match(/(?:"([^"]*)")|([^,]+)/g).map(s => s.replace(/^"|"$/g, '').trim());
+    // Acomodar hasta 3 columnas: Asiento, Nombre, Apellido
+    const asiento = parts[0] ? parts[0].trim() : '';
+    const nombre = parts[1] ? parts[1].trim() : '';
+    const apellido = parts[2] ? parts[2].trim() : '';
+    if (asiento) rows.push({ asiento: asiento, nombre: nombre, apellido: apellido });
+  }
+  return rows;
+}
+
+// Normalizar para búsqueda: quitar tildes y pasar a minúsculas
+function normalizeString(s) {
+  if (!s) return '';
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+// Buscar coincidencias por nombre y/o apellido
+function buscarEnCSV(list, query) {
+  const q = normalizeString(query.trim());
+  if (!q) return [];
+  const tokens = q.split(/\s+/).filter(t => t.length>0);
+
+  return list.filter(item => {
+    const full = normalizeString((item.nombre || '') + ' ' + (item.apellido || ''));
+    const nombre = normalizeString(item.nombre || '');
+    const apellido = normalizeString(item.apellido || '');
+    // Si el usuario pone dos tokens, intentar que ambos estén (nombre y apellido)
+    if (tokens.length >= 2) {
+      return tokens.every(t => full.includes(t));
+    }
+    // Si un token, aceptar si aparece en nombre o apellido o full
+    const t = tokens[0];
+    return nombre.includes(t) || apellido.includes(t) || full.includes(t);
+  });
+}
+
+// Integrar con el UI: cuando el usuario escribe texto en input y presiona buscar, buscar en CSV
+// Nota: el código de numeración de asientos en el SVG ya asigna `data-seat` a rects.
+// Cargamos el CSV al inicio (archivo local) y lo guardamos en memoria.
+let csvData = null;
+// Intentamos cargar el CSV relativo al root (misma carpeta)
+cargarCSV('nombresConAsientos.csv').then(data => {
+  if (!data) {
+    console.warn('No se pudo cargar nombresConAsientos.csv');
+    return;
+  }
+  csvData = data;
+  console.info(`CSV cargado: ${csvData.length} registros`);
+});
+
+// Reutilizar el input/button/info del DOM (si existen)
+const mainInput = document.getElementById('seatInput');
+const mainButton = document.getElementById('searchButton');
+const mainInfo = document.getElementById('seatInfo');
+
+if (mainButton && mainInput) {
+  // Adjuntar manejador adicional que decide si buscar por número o por nombre
+  mainButton.addEventListener('click', async (ev) => {
+    const val = mainInput.value.trim();
+    if (!val) {
+      mainInfo.textContent = '⚠️ Ingresa un número o un nombre para buscar';
+      return;
+    }
+
+    // Priorizar búsqueda numérica si la entrada es un entero
+    const maybeNum = parseInt(val);
+    if (!isNaN(maybeNum) && String(maybeNum) === val) {
+      // Llamar al click original ya definido dentro del load del SVG — simulamos click: buscar el rect con data-seat
+      // Si el SVG ya está cargado, marcar asiento. Si no, mostrar mensaje.
+      const svgObj = document.getElementById('svgMapa');
+      if (svgObj && svgObj.contentDocument) {
+        const seatRect = svgObj.contentDocument.querySelector(`rect[data-seat='${maybeNum}']`);
+        if (seatRect) {
+          // Reutilizar la función marcarAsiento si está en scope — está dentro del load handler, por lo que puede no ser accesible aquí.
+          // Intentaremos dispatch de un evento personalizado para que el handler dentro de load lo procese.
+          const ev = new CustomEvent('marcar-asiento-externo', { detail: { numero: maybeNum } });
+          svgObj.dispatchEvent(ev);
+          return;
+        } else {
+          mainInfo.textContent = `❌ Asiento num ${maybeNum} no encontrado en el mapa.`;
+          return;
+        }
+      } else {
+        mainInfo.textContent = '⚠️ El mapa SVG no está listo aún.';
+        return;
+      }
+    }
+
+    // Si no es número, búsqueda por nombre
+    if (!csvData) {
+      mainInfo.textContent = '⚠️ Lista de nombres no cargada aún. Intenta de nuevo en un momento.';
+      return;
+    }
+
+    const matches = buscarEnCSV(csvData, val);
+    if (matches.length === 0) {
+      mainInfo.textContent = `❌ No se encontraron coincidencias para "${val}".`;
+      return;
+    }
+    // Si hay múltiples, mostrar lista resumida
+    if (matches.length > 1) {
+      const lista = matches.slice(0, 10).map(m => `${m.asiento} → ${m.nombre} ${m.apellido}`).join('\n');
+      mainInfo.textContent = `ℹ️ Se encontraron ${matches.length} coincidencias (mostrando hasta 10):\n${lista}`;
+      // Intentar priorizar coincidencia exacta (nombre y apellido completos)
+      const exact = matches.find(m => normalizeString((m.nombre + ' ' + m.apellido).trim()) === normalizeString(val));
+      if (exact) {
+        // marcar el asiento exacto
+        const svgObj = document.getElementById('svgMapa');
+        if (svgObj && svgObj.contentDocument) {
+          svgObj.dispatchEvent(new CustomEvent('marcar-asiento-externo', { detail: { numero: parseInt(exact.asiento) } }));
+        }
+      }
+      return;
+    }
+
+    // Uno único: marcarlo
+    const seatNum = parseInt(matches[0].asiento);
+    const svgObj2 = document.getElementById('svgMapa');
+    if (svgObj2 && svgObj2.contentDocument) {
+      svgObj2.dispatchEvent(new CustomEvent('marcar-asiento-externo', { detail: { numero: seatNum } }));
+      mainInfo.textContent = `✅ Encontrado: ${matches[0].asiento} → ${matches[0].nombre} ${matches[0].apellido}`;
+    } else {
+      mainInfo.textContent = `⚠️ Resultado: asiento ${seatNum}. El mapa SVG no está listo aún.`;
+    }
+  });
+}
+
+// Escuchar evento personalizado desde fuera para marcar el asiento usando la lógica dentro del load handler
+// El handler que define marcarAsiento está dentro del evento load; aquí nos limitamos a reproducir la acción
+document.getElementById('svgMapa')?.addEventListener('marcar-asiento-externo', (e) => {
+  try {
+    const num = e.detail && e.detail.numero;
+    const svgObj = document.getElementById('svgMapa');
+    const svgDoc = svgObj && svgObj.contentDocument;
+    if (!svgDoc || !num) return;
+
+    // Asegurar overlay (igual que en el load handler)
+    let overlay = svgDoc.getElementById('overlay-marks');
+    const svgRoot = svgDoc.documentElement;
+    if (!overlay) {
+      overlay = svgDoc.createElementNS('http://www.w3.org/2000/svg', 'g');
+      overlay.setAttribute('id', 'overlay-marks');
+      overlay.setAttribute('stroke', 'red');
+      overlay.setAttribute('stroke-width', '2');
+      svgRoot.appendChild(overlay);
+    }
+
+    // Limpiar overlay
+    while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
+
+    // Restaurar color del último asiento seleccionado (almacenado en la propiedad del elemento svgObj)
+    try {
+      const last = svgObj._lastSeat;
+      if (last && last instanceof svgDoc.defaultView.SVGElement) {
+        const orig = last.getAttribute('data-orig-fill') || last.getAttribute('fill') || '#fff';
+        last.setAttribute('fill', orig);
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    const seat = svgDoc.querySelector(`rect[data-seat='${num}']`);
+    if (!seat) {
+      if (mainInfo) mainInfo.textContent = `❌ Asiento ${num} no encontrado en el mapa.`;
+      return;
+    }
+
+    // Guardar color original si no existe
+    if (!seat.getAttribute('data-orig-fill')) {
+      seat.setAttribute('data-orig-fill', seat.getAttribute('fill') || '#ffffff');
+    }
+
+    // Cambiar color del asiento seleccionado
+    seat.setAttribute('fill', '#ff9800');
+    // Guardarlo como último
+    svgObj._lastSeat = seat;
+
+    const x = parseFloat(seat.getAttribute('x')) || 0;
+    const y = parseFloat(seat.getAttribute('y')) || 0;
+    const w = parseFloat(seat.getAttribute('width')) || 0;
+    const h = parseFloat(seat.getAttribute('height')) || 0;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const offset = Math.min(w, h) / 2 || 6;
+
+    const line1 = svgDoc.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line1.setAttribute('x1', cx - offset);
+    line1.setAttribute('y1', cy - offset);
+    line1.setAttribute('x2', cx + offset);
+    line1.setAttribute('y2', cy + offset);
+
+    const line2 = svgDoc.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line2.setAttribute('x1', cx - offset);
+    line2.setAttribute('y1', cy + offset);
+    line2.setAttribute('x2', cx + offset);
+    line2.setAttribute('y2', cy - offset);
+
+    overlay.appendChild(line1);
+    overlay.appendChild(line2);
+
+    const row = seat.getAttribute('data-row');
+    const col = seat.getAttribute('data-col');
+    if (mainInfo) mainInfo.textContent = `✅ Asiento ${num}` + (row && col ? ` → Fila ${row}, Columna ${col}` : '');
+  } catch (err) {
+    console.error('Error en marcar-asiento-externo:', err);
+  }
+});
