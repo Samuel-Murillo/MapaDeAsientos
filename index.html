@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mapa de Asientos</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Reserva de Asientos</h1>
+
+  <input type="number" id="seatInput" placeholder="Ingresa tu número de asiento" min="1">
+  <button id="searchButton">Buscar Asiento</button>
+
+  <p id="seatInfo"></p>
+
+  <div id="mapa">
+    <object id="svgMapa" data="mapa_ready_fixed.svg" type="image/svg+xml"></object>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

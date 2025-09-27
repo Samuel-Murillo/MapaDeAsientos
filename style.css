@@ -1,0 +1,43 @@
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  margin: 0;
+  padding: 10px;
+}
+
+#mapa {
+  margin-top: 20px;
+  width: 100%;
+  overflow-x: auto;
+}
+
+#svgMapa {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+/* Input y botón adaptados */
+input, button {
+  font-size: 1.1em;
+  padding: 10px;
+  margin: 5px;
+  width: 80%;
+  max-width: 400px;
+}
+
+/* Estilos para la X */
+.marcaX {
+  stroke: red;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+/* Resalte opcional */
+.highlight {
+  fill: #ffcccc !important;
+  stroke: black;
+  stroke-width: 1px;
+}
